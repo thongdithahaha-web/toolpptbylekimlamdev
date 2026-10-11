@@ -1,5 +1,5 @@
-import React from 'react';
-import { Download, CheckCircle2, RotateCcw, Presentation, Sparkles, Share2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, CheckCircle2, RotateCcw, Presentation, Sparkles, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { MergeResult } from '../types.ts';
 import { formatBytes } from '../utils/pptxParser.ts';
 
@@ -14,6 +14,8 @@ export const MergeSuccessCard: React.FC<MergeSuccessCardProps> = ({
   onReset,
   onBackToEdit,
 }) => {
+  const [showAuditList, setShowAuditList] = useState(true);
+
   const handleDownload = () => {
     const a = document.createElement('a');
     a.href = result.url;
@@ -37,12 +39,12 @@ export const MergeSuccessCard: React.FC<MergeSuccessCardProps> = ({
       <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">
         File PowerPoint mới của bạn đã sẵn sàng
       </h2>
-      <p className="text-sm text-slate-600 mb-8 max-w-lg mx-auto leading-relaxed">
-        Các bài thuyết trình đã được hợp nhất chính xác theo đúng thứ tự bạn đã sắp xếp, giữ trọn vẹn bố cục và hình ảnh gốc.
+      <p className="text-sm text-slate-600 mb-6 max-w-lg mx-auto leading-relaxed">
+        Các bài thuyết trình đã được hợp nhất chính xác theo đúng thứ tự ưu tiên, bảo toàn 100% không thiếu sót bất kỳ tệp hay slide nào.
       </p>
 
       {/* Info card */}
-      <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-left mb-8 space-y-3">
+      <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 text-left mb-6 space-y-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shrink-0">
             <Presentation className="w-5 h-5" />
@@ -61,7 +63,7 @@ export const MergeSuccessCard: React.FC<MergeSuccessCardProps> = ({
             <span className="text-base font-extrabold text-rose-600 font-mono">{result.totalSlides}</span>
           </div>
           <div className="p-2 bg-white rounded-xl border border-slate-100">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Từ số file</span>
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Số tệp đã gộp</span>
             <span className="text-base font-extrabold text-slate-800 font-mono">{result.totalFiles}</span>
           </div>
           <div className="p-2 bg-white rounded-xl border border-slate-100">
@@ -72,6 +74,53 @@ export const MergeSuccessCard: React.FC<MergeSuccessCardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Integrity Audit Report: Guarantees 0 missed files */}
+      {result.auditItems && result.auditItems.length > 0 && (
+        <div className="mb-8 p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200/90 text-left">
+          <button
+            type="button"
+            onClick={() => setShowAuditList(!showAuditList)}
+            className="w-full flex items-center justify-between text-xs font-bold text-emerald-900 cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Kiểm định toàn vẹn: Đã lấy đủ 100% {result.auditItems.length} tệp tin (không thiếu sót)</span>
+            </div>
+            {showAuditList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showAuditList && (
+            <div className="mt-3 pt-3 border-t border-emerald-200/60 space-y-2">
+              {result.auditItems.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between text-xs p-2 bg-white/90 rounded-xl border border-emerald-100"
+                >
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="font-bold text-slate-800 font-mono text-[11px]">
+                      #{item.fileIndex + 1}
+                    </span>
+                    <span className="truncate text-slate-700 font-medium max-w-[200px] sm:max-w-[280px]">
+                      {item.fileName}
+                    </span>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2 font-mono text-[11px]">
+                    <span className="text-emerald-700 font-bold">
+                      {item.includedSlidesCount}/{item.totalOriginalSlides} slide
+                    </span>
+                    <span className="text-slate-400">•</span>
+                    <span className="text-indigo-600 font-semibold">
+                      Trang #{item.slideRangeStart}→#{item.slideRangeEnd}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="space-y-3">

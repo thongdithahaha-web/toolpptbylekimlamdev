@@ -16,6 +16,16 @@ export interface PPTFileItem {
   isAnalyzing?: boolean;
 }
 
+export interface FileAuditItem {
+  fileIndex: number;
+  fileName: string;
+  totalOriginalSlides: number;
+  includedSlidesCount: number;
+  slideRangeStart: number;
+  slideRangeEnd: number;
+  verified: boolean;
+}
+
 export interface MergeResult {
   blob: Blob;
   url: string;
@@ -24,4 +34,5 @@ export interface MergeResult {
   totalFiles: number;
   fileSize: number;
   createdAt: Date;
+  auditItems?: FileAuditItem[];
 }
