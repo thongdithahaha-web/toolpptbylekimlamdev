@@ -1,0 +1,6 @@
+{
+  "name": "PPTMerge - Gộp Nhiều File PowerPoint Theo Thứ Tự",
+  "description": "Công cụ trực tuyến giúp gộp nhiều file thuyết trình PowerPoint (.pptx) thành 1 file duy nhất theo đúng thứ tự bạn mong muốn, xem trước slide và tải về nhanh chóng.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
