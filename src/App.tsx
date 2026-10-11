@@ -471,17 +471,49 @@ export default function App() {
             {/* If files uploaded, show list and reordering tools */}
             {files.length > 0 && (
               <div className="space-y-6 animate-in fade-in duration-300">
-                {/* List Header with Order Hint */}
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2">
-                    <ArrowDownUp className="w-4 h-4 text-rose-600" />
-                    <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
-                      Danh sách file ({files.length} bài thuyết trình)
-                    </h3>
+                {/* List Header with Order & Priority Rule */}
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-2">
+                      <ArrowDownUp className="w-4 h-4 text-rose-600" />
+                      <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                        Thứ tự ưu tiên ghép slide ({files.length} file)
+                      </h3>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      💡 Kéo <strong className="text-slate-700">⋮⋮</strong> hoặc bấm <strong className="text-slate-700">▲/▼</strong> để đổi vị trí ưu tiên
+                    </span>
                   </div>
-                  <span className="text-xs text-slate-500 hidden sm:inline">
-                    💡 Kéo biểu tượng <strong className="text-slate-700">⋮⋮</strong> hoặc bấm mũi tên ▲/▼ để đổi vị trí
-                  </span>
+
+                  {/* Priority Flow Diagram */}
+                  <div className="p-3 bg-gradient-to-r from-amber-50/70 via-rose-50/50 to-indigo-50/50 border border-amber-200/80 rounded-2xl">
+                    <div className="flex items-center gap-2 mb-2 text-xs font-bold text-amber-900">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping inline-block" />
+                      <span>Trình tự ghép: File chọn đầu tiên (#1) là ƯU TIÊN CAO NHẤT (bắt đầu từ Slide 1 đến cuối)</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 overflow-x-auto py-1 text-xs scrollbar-thin">
+                      {files.map((f, i) => (
+                        <React.Fragment key={f.id}>
+                          <div
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg shrink-0 border font-medium ${
+                              i === 0
+                                ? 'bg-amber-400 text-slate-950 font-bold border-amber-500 shadow-xs'
+                                : 'bg-white text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            <span className="font-mono text-[11px] font-black">
+                              {i === 0 ? '🌟 #1' : `#${i + 1}`}
+                            </span>
+                            <span className="truncate max-w-[120px]">{f.name}</span>
+                          </div>
+                          {i < files.length - 1 && (
+                            <span className="text-slate-400 font-bold shrink-0">➔</span>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Ordered Files List */}
