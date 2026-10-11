@@ -96,7 +96,7 @@ export async function mergePPTXClientSide(
   onProgress?.({
     step: 1,
     percentage: 10,
-    message: `Đang tải và xác thực tệp gốc ưu tiên số 1: "${items[0].name}"...`,
+    message: `Đang tải và chuẩn bị tệp ưu tiên số 1: "${items[0].name}"...`,
   });
 
   // Base presentation is File #1 (highest priority)
@@ -129,6 +129,12 @@ export async function mergePPTXClientSide(
   );
   let nextRId = (rIds.length > 0 ? Math.max(...rIds) : 1) + 1;
 
+  // Track max masterId in presentation.xml
+  const masterIds = Array.from(presXml.matchAll(/<p:sldMasterId[^>]*id="(\d+)"/g)).map((m) =>
+    parseInt(m[1], 10)
+  );
+  let nextMasterId = (masterIds.length > 0 ? Math.max(...masterIds) : 2147483648) + 1;
+
   let totalSlidesMerged = baseOrderedSlides.length;
 
   auditItems.push({
@@ -152,20 +158,148 @@ export async function mergePPTXClientSide(
   // Loop through ALL subsequent files in order
   for (let fIdx = 1; fIdx < items.length; fIdx++) {
     const currentItem = items[fIdx];
+    const fileId = `f${fIdx}`;
     const progressPercent = 25 + Math.round(((fIdx - 1) / (items.length - 1)) * 55);
 
     onProgress?.({
       step: 3,
       percentage: progressPercent,
-      message: `Đang kiểm tra và ghép tệp #${fIdx + 1}: "${currentItem.name}"...`,
+      message: `Đang cách ly giao diện & ghép tệp #${fIdx + 1}: "${currentItem.name}"...`,
     });
 
     const srcArrayBuffer = await currentItem.file.arrayBuffer();
     const srcZip = await JSZip.loadAsync(srcArrayBuffer);
 
-    // Get authoritative ordered slide paths for this file
-    const srcSlidePaths = await getOrderedSlidePaths(srcZip);
+    // =========================================================================
+    // STEP A: COPY ALL MEDIA (IMAGES, AUDIO, VIDEO) WITH UNIQUE PREFIX
+    // Prevents image name collisions between presentations
+    // =========================================================================
+    const srcMedia = Object.keys(srcZip.files).filter(
+      (k) => k.startsWith('ppt/media/') && !srcZip.files[k].dir
+    );
+    for (const mPath of srcMedia) {
+      const mName = mPath.replace('ppt/media/', '');
+      const newMPath = `ppt/media/${fileId}_${mName}`;
+      const mediaBuf = await srcZip.file(mPath)?.async('arraybuffer');
+      if (mediaBuf) {
+        baseZip.file(newMPath, mediaBuf);
+      }
+    }
 
+    // =========================================================================
+    // STEP B: CLONE SLIDE MASTERS SPECIFIC TO THIS FILE
+    // Isolates master background & master shapes so they NEVER bleed to other files
+    // =========================================================================
+    const srcMasters = Object.keys(srcZip.files).filter((k) =>
+      /^ppt\/slideMasters\/slideMaster\d+\.xml$/i.test(k)
+    );
+    const masterMap = new Map<string, string>(); // oldMasterName -> newMasterName
+
+    for (const smPath of srcMasters) {
+      const smName = smPath.replace('ppt/slideMasters/', '');
+      const newSmName = `master_${fileId}_${smName}`;
+      const newSmPath = `ppt/slideMasters/${newSmName}`;
+      masterMap.set(smName, newSmName);
+
+      const masterXml = await srcZip.file(smPath)?.async('text');
+      if (masterXml) {
+        baseZip.file(newSmPath, masterXml);
+      }
+
+      // Copy master relationships
+      const smRelsPath = `ppt/slideMasters/_rels/${smName}.rels`;
+      const newSmRelsPath = `ppt/slideMasters/_rels/${newSmName}.rels`;
+      const smRelsFile = srcZip.file(smRelsPath);
+      if (smRelsFile) {
+        let relsXml = await smRelsFile.async('text');
+        // Remap media targets in master rels
+        relsXml = relsXml.replace(/Target="(\.\.\/media\/[^"]+)"/g, (match, p1) => {
+          const mName = p1.replace('../media/', '');
+          return `Target="../media/${fileId}_${mName}"`;
+        });
+        // Remap layout targets in master rels
+        relsXml = relsXml.replace(/Target="(\.\.\/slideLayouts\/[^"]+)"/g, (match, p1) => {
+          const lName = p1.replace('../slideLayouts/', '');
+          return `Target="../slideLayouts/layout_${fileId}_${lName}"`;
+        });
+        baseZip.file(newSmRelsPath, relsXml);
+      }
+
+      // Register master in presentation.xml.rels
+      const masterRid = `rId${nextRId++}`;
+      presRelsXml = presRelsXml.replace(
+        '</Relationships>',
+        `<Relationship Id="${masterRid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/${newSmName}"/></Relationships>`
+      );
+
+      // Register master in presentation.xml <p:sldMasterIdLst>
+      const mId = nextMasterId++;
+      if (presXml.includes('</p:sldMasterIdLst>')) {
+        presXml = presXml.replace(
+          '</p:sldMasterIdLst>',
+          `<p:sldMasterId id="${mId}" r:id="${masterRid}"/></p:sldMasterIdLst>`
+        );
+      } else if (presXml.includes('<p:sldMasterIdLst/>')) {
+        presXml = presXml.replace(
+          '<p:sldMasterIdLst/>',
+          `<p:sldMasterIdLst><p:sldMasterId id="${mId}" r:id="${masterRid}"/></p:sldMasterIdLst>`
+        );
+      }
+
+      // Register master in [Content_Types].xml
+      contentTypesXml = contentTypesXml.replace(
+        '</Types>',
+        `<Override PartName="/${newSmPath}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/></Types>`
+      );
+    }
+
+    // =========================================================================
+    // STEP C: CLONE SLIDE LAYOUTS SPECIFIC TO THIS FILE
+    // Every slide retains its exact layout (Title, Content, Two-Column) without
+    // title cover graphics spreading to inner content slides!
+    // =========================================================================
+    const srcLayouts = Object.keys(srcZip.files).filter((k) =>
+      /^ppt\/slideLayouts\/slideLayout\d+\.xml$/i.test(k)
+    );
+    for (const slPath of srcLayouts) {
+      const slName = slPath.replace('ppt/slideLayouts/', '');
+      const newSlName = `layout_${fileId}_${slName}`;
+      const newSlPath = `ppt/slideLayouts/${newSlName}`;
+
+      const layoutXml = await srcZip.file(slPath)?.async('text');
+      if (layoutXml) {
+        baseZip.file(newSlPath, layoutXml);
+      }
+
+      const slRelsPath = `ppt/slideLayouts/_rels/${slName}.rels`;
+      const newSlRelsPath = `ppt/slideLayouts/_rels/${newSlName}.rels`;
+      const slRelsFile = srcZip.file(slRelsPath);
+      if (slRelsFile) {
+        let relsXml = await slRelsFile.async('text');
+        // Remap master target in layout rels
+        relsXml = relsXml.replace(/Target="(\.\.\/slideMasters\/[^"]+)"/g, (match, p1) => {
+          const mName = p1.replace('../slideMasters/', '');
+          const mapped = masterMap.get(mName) || mName;
+          return `Target="../slideMasters/${mapped}"`;
+        });
+        // Remap media targets in layout rels
+        relsXml = relsXml.replace(/Target="(\.\.\/media\/[^"]+)"/g, (match, p1) => {
+          const mName = p1.replace('../media/', '');
+          return `Target="../media/${fileId}_${mName}"`;
+        });
+        baseZip.file(newSlRelsPath, relsXml);
+      }
+
+      contentTypesXml = contentTypesXml.replace(
+        '</Types>',
+        `<Override PartName="/${newSlPath}" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/></Types>`
+      );
+    }
+
+    // =========================================================================
+    // STEP D: COPY ORDERED SLIDES AND REMAP RELATIONSHIPS
+    // =========================================================================
+    const srcSlidePaths = await getOrderedSlidePaths(srcZip);
     const selectedNums = currentItem.selectedSlideNumbers || [];
     let fileSlidesAdded = 0;
     const fileStartPos = currentSlidePosition;
@@ -199,34 +333,19 @@ export async function mergePPTXClientSide(
       if (srcRelsFile) {
         let relsContent = await srcRelsFile.async('text');
 
-        // Copy and remap all media targets (images, audio, video)
-        const mediaMatches = Array.from(relsContent.matchAll(/Target="(\.\.\/media\/[^"]+)"/g));
-        for (const m of mediaMatches) {
-          const origTarget = m[1];
-          const mediaFilename = origTarget.replace('../media/', '');
-          const srcMediaPath = `ppt/media/${mediaFilename}`;
-          const newMediaFilename = `f${fIdx}_${mediaFilename}`;
-          const destMediaPath = `ppt/media/${newMediaFilename}`;
+        // Remap layout to this file's isolated cloned layout
+        relsContent = relsContent.replace(/Target="(\.\.\/slideLayouts\/[^"]+)"/g, (match, p1) => {
+          const lName = p1.replace('../slideLayouts/', '');
+          return `Target="../slideLayouts/layout_${fileId}_${lName}"`;
+        });
 
-          const mediaData = srcZip.file(srcMediaPath);
-          if (mediaData) {
-            const mediaBuffer = await mediaData.async('arraybuffer');
-            baseZip.file(destMediaPath, mediaBuffer);
-            relsContent = relsContent.replaceAll(origTarget, `../media/${newMediaFilename}`);
-          }
-        }
+        // Remap media to this file's isolated cloned media
+        relsContent = relsContent.replace(/Target="(\.\.\/media\/[^"]+)"/g, (match, p1) => {
+          const mName = p1.replace('../media/', '');
+          return `Target="../media/${fileId}_${mName}"`;
+        });
 
-        // Remap layout if not present in base
-        const layoutMatches = Array.from(relsContent.matchAll(/Target="(\.\.\/slideLayouts\/[^"]+)"/g));
-        for (const lm of layoutMatches) {
-          const origLayoutTarget = lm[1];
-          const layoutPath = `ppt/${origLayoutTarget.replace('../', '')}`;
-          if (!baseZip.file(layoutPath)) {
-            relsContent = relsContent.replaceAll(origLayoutTarget, '../slideLayouts/slideLayout1.xml');
-          }
-        }
-
-        // Strip notesSlide references to avoid mismatched notes masters
+        // Strip notesSlide references to avoid mismatched notes masters repair warning
         relsContent = relsContent.replace(
           /<Relationship[^>]*Type="[^"]*notesSlide"[^>]*\/>/gi,
           ''

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   FileText,
   Presentation,
@@ -15,30 +15,39 @@ import {
   FileCode,
   ShieldCheck,
   Zap,
+  Image as ImageIcon,
+  FolderArchive,
+  Search,
+  Check,
 } from 'lucide-react';
 import {
   convertPptxToPdf,
+  convertPptxToHandoutPdf,
   convertPptxToDocx,
   convertDocxToPptx,
   convertTxtToPptx,
   convertPptxToTxt,
   convertPptxToHtml,
+  convertPptxExtractMedia,
+  convertPptxToJson,
+  convertPptxToCsv,
   convertDocxToPdf,
+  convertDocxExtractMedia,
+  convertTxtToDocx,
+  convertTxtToPdf,
+  convertExcelToPptx,
+  convertExcelToPdf,
+  convertImagesToPptx,
+  convertImagesToPdf,
   ConversionResult,
 } from '../utils/documentConverter.ts';
 import { formatBytes } from '../utils/pptxParser.ts';
 
-type ConvertType =
-  | 'pptx-to-pdf'
-  | 'pptx-to-docx'
-  | 'docx-to-pptx'
-  | 'txt-to-pptx'
-  | 'pptx-to-txt'
-  | 'pptx-to-html'
-  | 'docx-to-pdf';
+export type CategoryKey = 'all' | 'pptx' | 'docx' | 'excel' | 'text' | 'image';
 
-interface PresetOption {
-  id: ConvertType;
+export interface ConverterService {
+  id: string;
+  category: CategoryKey;
   title: string;
   desc: string;
   fromExt: string;
@@ -47,100 +56,299 @@ interface PresetOption {
   toIcon: any;
   badge: string;
   accept: string;
+  action: (file: File) => Promise<ConversionResult>;
 }
 
-const PRESETS: PresetOption[] = [
+const SERVICES: ConverterService[] = [
+  // 1. PPTX Services
   {
     id: 'pptx-to-pdf',
-    title: 'PowerPoint sang PDF',
-    desc: 'Chuyển bài thuyết trình thành tệp PDF trang ngang sắc nét, sẵn sàng in ấn.',
+    category: 'pptx',
+    title: 'PowerPoint sang PDF chuẩn',
+    desc: 'Xuất bài thuyết trình thành tệp PDF trang ngang sắc nét, chuẩn in ấn và nộp bài.',
     fromExt: '.pptx',
     toExt: '.pdf',
     fromIcon: Presentation,
     toIcon: FileText,
     badge: 'Phổ biến nhất',
     accept: '.pptx,.ppt',
+    action: convertPptxToPdf,
+  },
+  {
+    id: 'pptx-to-handout-pdf',
+    category: 'pptx',
+    title: 'PowerPoint sang PDF Handout (3 slide/trang)',
+    desc: 'Tạo tài liệu tóm tắt dạng Handout phát tay với 3 slide và các dòng kẻ ghi chú mỗi trang.',
+    fromExt: '.pptx',
+    toExt: '.pdf',
+    fromIcon: Presentation,
+    toIcon: FileText,
+    badge: 'In báo cáo phát tay',
+    accept: '.pptx,.ppt',
+    action: convertPptxToHandoutPdf,
   },
   {
     id: 'pptx-to-docx',
-    title: 'PowerPoint sang Word',
-    desc: 'Trích xuất toàn bộ slide thành bài báo cáo tài liệu Word (.docx) chuẩn.',
+    category: 'pptx',
+    title: 'PowerPoint sang Word (.docx)',
+    desc: 'Trích xuất toàn bộ slide thành bài báo cáo tài liệu Word chuyên nghiệp có tiêu đề và mục lục.',
     fromExt: '.pptx',
     toExt: '.docx',
     fromIcon: Presentation,
     toIcon: FileType,
     badge: 'Trích xuất báo cáo',
     accept: '.pptx,.ppt',
+    action: convertPptxToDocx,
   },
   {
-    id: 'docx-to-pptx',
-    title: 'Word sang PowerPoint',
-    desc: 'Tự động đọc các tiêu đề, đề mục Word và tạo slide thuyết trình tương ứng.',
-    fromExt: '.docx',
-    toExt: '.pptx',
-    fromIcon: FileType,
-    toIcon: Presentation,
-    badge: 'Tạo slide tự động',
-    accept: '.docx',
-  },
-  {
-    id: 'txt-to-pptx',
-    title: 'Văn bản (TXT/MD) sang PowerPoint',
-    desc: 'Chuyển dàn ý ghi chú văn bản thuần thành bài thuyết trình PowerPoint.',
-    fromExt: '.txt, .md',
-    toExt: '.pptx',
-    fromIcon: FileCode,
-    toIcon: Presentation,
-    badge: 'Soạn slide siêu tốc',
-    accept: '.txt,.md,.text',
+    id: 'pptx-extract-media',
+    category: 'pptx',
+    title: 'Tách tất cả hình ảnh từ PowerPoint (.zip)',
+    desc: 'Tách toàn bộ tệp hình ảnh, sơ đồ gốc có trong slide ra một tệp nén ZIP độ nét cao.',
+    fromExt: '.pptx',
+    toExt: '.zip',
+    fromIcon: Presentation,
+    toIcon: FolderArchive,
+    badge: 'Lấy ảnh gốc',
+    accept: '.pptx,.ppt',
+    action: convertPptxExtractMedia,
   },
   {
     id: 'pptx-to-html',
-    title: 'PowerPoint sang Web Slide (HTML)',
-    desc: 'Tạo bài thuyết trình Web độc lập mở được trên mọi điện thoại & máy tính.',
+    category: 'pptx',
+    title: 'PowerPoint sang Web Slide (.html)',
+    desc: 'Tạo bài thuyết trình Web độc lập chạy mượt trên mọi điện thoại & máy tính không cần Office.',
     fromExt: '.pptx',
     toExt: '.html',
     fromIcon: Presentation,
     toIcon: FileCode,
     badge: 'Trình chiếu di động',
     accept: '.pptx,.ppt',
+    action: convertPptxToHtml,
   },
   {
     id: 'pptx-to-txt',
-    title: 'PowerPoint sang Văn bản thuần',
-    desc: 'Trích xuất toàn bộ chữ, ghi chú và dàn ý slide ra tệp .txt chỉnh sửa.',
+    category: 'pptx',
+    title: 'PowerPoint sang Văn bản (.txt)',
+    desc: 'Trích xuất toàn bộ chữ, ghi chú và dàn ý slide ra tệp văn bản thuần để biên tập.',
     fromExt: '.pptx',
     toExt: '.txt',
     fromIcon: Presentation,
     toIcon: FileText,
-    badge: 'Lấy nội dung',
+    badge: 'Lấy văn bản',
     accept: '.pptx,.ppt',
+    action: (f) => convertPptxToTxt(f, false),
+  },
+  {
+    id: 'pptx-to-md',
+    category: 'pptx',
+    title: 'PowerPoint sang Markdown (.md)',
+    desc: 'Chuyển đổi bài thuyết trình sang cấu trúc Markdown cho lập trình viên & Notion.',
+    fromExt: '.pptx',
+    toExt: '.md',
+    fromIcon: Presentation,
+    toIcon: FileCode,
+    badge: 'Dành cho Notion/Dev',
+    accept: '.pptx,.ppt',
+    action: (f) => convertPptxToTxt(f, true),
+  },
+  {
+    id: 'pptx-to-json',
+    category: 'pptx',
+    title: 'PowerPoint sang Dữ liệu JSON',
+    desc: 'Xuất toàn bộ cấu trúc slide thành tệp JSON có phân cấp dữ liệu chi tiết.',
+    fromExt: '.pptx',
+    toExt: '.json',
+    fromIcon: Presentation,
+    toIcon: FileCode,
+    badge: 'Dữ liệu lập trình',
+    accept: '.pptx,.ppt',
+    action: convertPptxToJson,
+  },
+  {
+    id: 'pptx-to-csv',
+    category: 'pptx',
+    title: 'PowerPoint sang Bảng tính CSV',
+    desc: 'Tổng hợp danh sách các trang và nội dung vào bảng tính Excel / CSV.',
+    fromExt: '.pptx',
+    toExt: '.csv',
+    fromIcon: Presentation,
+    toIcon: FileSpreadsheet,
+    badge: 'Bảng tính nội dung',
+    accept: '.pptx,.ppt',
+    action: convertPptxToCsv,
+  },
+
+  // 2. Word (DOCX) Services
+  {
+    id: 'docx-to-pptx',
+    category: 'docx',
+    title: 'Word (.docx) sang PowerPoint',
+    desc: 'Tự động đọc các tiêu đề, đề mục Heading của Word để tạo các slide thuyết trình tương ứng.',
+    fromExt: '.docx',
+    toExt: '.pptx',
+    fromIcon: FileType,
+    toIcon: Presentation,
+    badge: 'Tạo slide tự động',
+    accept: '.docx',
+    action: convertDocxToPptx,
   },
   {
     id: 'docx-to-pdf',
-    title: 'Word sang PDF',
-    desc: 'Chuyển đổi tệp Word (.docx) sang định dạng PDF để khóa nội dung.',
+    category: 'docx',
+    title: 'Word (.docx) sang PDF',
+    desc: 'Chuyển đổi tài liệu Word sang PDF chuẩn để khóa chỉnh sửa và in ấn.',
     fromExt: '.docx',
     toExt: '.pdf',
     fromIcon: FileType,
     toIcon: FileText,
-    badge: 'Bảo mật in ấn',
+    badge: 'Khóa văn bản',
     accept: '.docx',
+    action: convertDocxToPdf,
+  },
+  {
+    id: 'docx-extract-media',
+    category: 'docx',
+    title: 'Tách tất cả hình ảnh từ Word (.zip)',
+    desc: 'Trích xuất toàn bộ hình ảnh được chèn trong file Word thành một tệp ZIP gốc.',
+    fromExt: '.docx',
+    toExt: '.zip',
+    fromIcon: FileType,
+    toIcon: FolderArchive,
+    badge: 'Lấy ảnh Word',
+    accept: '.docx',
+    action: convertDocxExtractMedia,
+  },
+
+  // 3. Text / Markdown Services
+  {
+    id: 'txt-to-pptx',
+    category: 'text',
+    title: 'Văn bản (TXT/MD) sang PowerPoint',
+    desc: 'Chuyển dàn ý ghi chú văn bản thuần thành các trang slide thuyết trình hoàn chỉnh.',
+    fromExt: '.txt, .md',
+    toExt: '.pptx',
+    fromIcon: FileCode,
+    toIcon: Presentation,
+    badge: 'Soạn slide siêu tốc',
+    accept: '.txt,.md,.text',
+    action: convertTxtToPptx,
+  },
+  {
+    id: 'txt-to-docx',
+    category: 'text',
+    title: 'Văn bản (TXT/MD) sang Word (.docx)',
+    desc: 'Định dạng dàn ý văn bản thành tệp tài liệu Word với các cấp tiêu đề Heading 1.',
+    fromExt: '.txt, .md',
+    toExt: '.docx',
+    fromIcon: FileCode,
+    toIcon: FileType,
+    badge: 'Đóng gói văn bản',
+    accept: '.txt,.md,.text',
+    action: convertTxtToDocx,
+  },
+  {
+    id: 'txt-to-pdf',
+    category: 'text',
+    title: 'Văn bản (TXT/MD) sang PDF',
+    desc: 'Xuất các ghi chú văn bản thành tài liệu PDF có đánh số trang và canh lề đẹp mắt.',
+    fromExt: '.txt, .md',
+    toExt: '.pdf',
+    fromIcon: FileCode,
+    toIcon: FileText,
+    badge: 'Văn bản sang PDF',
+    accept: '.txt,.md,.text',
+    action: convertTxtToPdf,
+  },
+
+  // 4. Excel / Spreadsheet Services
+  {
+    id: 'excel-to-pptx',
+    category: 'excel',
+    title: 'Excel (XLSX/CSV) sang PowerPoint',
+    desc: 'Tự động đưa các bảng tính dữ liệu Excel vào các trang slide thuyết trình dạng bảng đẹp.',
+    fromExt: '.xlsx, .csv',
+    toExt: '.pptx',
+    fromIcon: FileSpreadsheet,
+    toIcon: Presentation,
+    badge: 'Báo cáo số liệu',
+    accept: '.xlsx,.xls,.csv',
+    action: convertExcelToPptx,
+  },
+  {
+    id: 'excel-to-pdf',
+    category: 'excel',
+    title: 'Excel (XLSX/CSV) sang PDF Bảng biểu',
+    desc: 'Xuất toàn bộ bảng tính Excel thành các trang PDF nằm ngang chuẩn in báo cáo.',
+    fromExt: '.xlsx, .csv',
+    toExt: '.pdf',
+    fromIcon: FileSpreadsheet,
+    toIcon: FileText,
+    badge: 'In bảng tính',
+    accept: '.xlsx,.xls,.csv',
+    action: convertExcelToPdf,
+  },
+
+  // 5. Image Services
+  {
+    id: 'image-to-pptx',
+    category: 'image',
+    title: 'Hình ảnh (PNG/JPG) sang PowerPoint',
+    desc: 'Đưa tệp hình ảnh vào một trang slide thuyết trình PowerPoint toàn màn hình.',
+    fromExt: '.png, .jpg',
+    toExt: '.pptx',
+    fromIcon: ImageIcon,
+    toIcon: Presentation,
+    badge: 'Chuyển ảnh sang slide',
+    accept: 'image/png,image/jpeg,image/webp',
+    action: convertImagesToPptx,
+  },
+  {
+    id: 'image-to-pdf',
+    category: 'image',
+    title: 'Hình ảnh (PNG/JPG) sang PDF',
+    desc: 'Đóng gói tệp hình ảnh thành một trang tài liệu PDF chuẩn khổ A4.',
+    fromExt: '.png, .jpg',
+    toExt: '.pdf',
+    fromIcon: ImageIcon,
+    toIcon: FileText,
+    badge: 'Chuyển ảnh sang PDF',
+    accept: 'image/png,image/jpeg,image/webp',
+    action: convertImagesToPdf,
   },
 ];
 
 export const ConverterTab: React.FC = () => {
-  const [selectedPreset, setSelectedPreset] = useState<ConvertType>('pptx-to-pdf');
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('pptx-to-pdf');
+  const [activeCategory, setActiveCategory] = useState<CategoryKey>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [conversionResult, setConversionResult] = useState<ConversionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const currentPreset = PRESETS.find((p) => p.id === selectedPreset) || PRESETS[0];
+  const currentService =
+    SERVICES.find((s) => s.id === selectedServiceId) || SERVICES[0];
 
-  const handleSelectPreset = (preset: PresetOption) => {
-    setSelectedPreset(preset.id);
+  // Filter services by category and search keyword
+  const filteredServices = useMemo(() => {
+    return SERVICES.filter((s) => {
+      const matchCategory =
+        activeCategory === 'all' || s.category === activeCategory;
+      const matchSearch =
+        searchQuery.trim() === '' ||
+        s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.desc.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.fromExt.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.toExt.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.badge.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchCategory && matchSearch;
+    });
+  }, [activeCategory, searchQuery]);
+
+  const handleSelectService = (service: ConverterService) => {
+    setSelectedServiceId(service.id);
     setUploadedFile(null);
     setConversionResult(null);
     setError(null);
@@ -161,13 +369,22 @@ export const ConverterTab: React.FC = () => {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toLowerCase();
 
-      // Auto-detect preset if file extension matches
+      // Smart auto-detection of best service
       if (ext === 'docx') {
-        setSelectedPreset('docx-to-pptx');
+        setSelectedServiceId('docx-to-pptx');
+        setActiveCategory('docx');
+      } else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+        setSelectedServiceId('excel-to-pptx');
+        setActiveCategory('excel');
       } else if (ext === 'txt' || ext === 'md') {
-        setSelectedPreset('txt-to-pptx');
+        setSelectedServiceId('txt-to-pptx');
+        setActiveCategory('text');
+      } else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp') {
+        setSelectedServiceId('image-to-pptx');
+        setActiveCategory('image');
       } else if (ext === 'pptx' || ext === 'ppt') {
-        setSelectedPreset('pptx-to-pdf');
+        setSelectedServiceId('pptx-to-pdf');
+        setActiveCategory('pptx');
       }
 
       setUploadedFile(file);
@@ -186,38 +403,11 @@ export const ConverterTab: React.FC = () => {
     setError(null);
 
     try {
-      let res: ConversionResult;
-
-      switch (selectedPreset) {
-        case 'pptx-to-pdf':
-          res = await convertPptxToPdf(uploadedFile);
-          break;
-        case 'pptx-to-docx':
-          res = await convertPptxToDocx(uploadedFile);
-          break;
-        case 'docx-to-pptx':
-          res = await convertDocxToPptx(uploadedFile);
-          break;
-        case 'txt-to-pptx':
-          res = await convertTxtToPptx(uploadedFile);
-          break;
-        case 'pptx-to-txt':
-          res = await convertPptxToTxt(uploadedFile);
-          break;
-        case 'pptx-to-html':
-          res = await convertPptxToHtml(uploadedFile);
-          break;
-        case 'docx-to-pdf':
-          res = await convertDocxToPdf(uploadedFile);
-          break;
-        default:
-          throw new Error('Chế độ chuyển đổi không hợp lệ.');
-      }
-
+      const res = await currentService.action(uploadedFile);
       setConversionResult(res);
     } catch (err: any) {
       console.error('Conversion failed:', err);
-      setError(err.message || 'Chuyển đổi tệp gặp sự cố ngoài ý muốn.');
+      setError(err.message || 'Chuyển đổi tệp gặp sự cố ngoài ý muốn. Vui lòng kiểm tra định dạng tệp.');
     } finally {
       setIsConverting(false);
     }
@@ -244,52 +434,86 @@ export const ConverterTab: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* Intro Banner */}
-      <div className="bg-gradient-to-r from-rose-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-md">
+      <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30">
               <Zap className="w-3.5 h-3.5 text-amber-300" />
-              <span>Chuyển đổi tức thì 100% trong trình duyệt</span>
+              <span>20 Dịch vụ chuyển đổi siêu tốc • 100% trong trình duyệt</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Chuyển Đổi Định Dạng Đa Năng
+              Trung Tâm Chuyển Đổi Định Dạng Đa Năng
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Hỗ trợ chuyển đổi qua lại giữa tất cả các định dạng tài liệu phổ biến nhất: 
-              <strong> PowerPoint (.pptx)</strong>, <strong>Word (.docx)</strong>, <strong>PDF</strong>, <strong>Văn bản (.txt)</strong> và <strong>Trình chiếu Web (HTML)</strong> mà không gửi tệp lên máy chủ.
+              Chuyển đổi qua lại giữa tất cả các loại tệp văn phòng phổ biến nhất: 
+              <strong> PowerPoint (.pptx)</strong>, <strong>Word (.docx)</strong>, <strong>PDF</strong>, 
+              <strong> Excel (.xlsx/.csv)</strong>, <strong>Văn bản (.txt/.md)</strong>, <strong>Hình ảnh</strong> và <strong>Trình chiếu Web (HTML)</strong> mà không cần tải lên máy chủ.
             </p>
           </div>
 
           <div className="flex items-center gap-2 p-3 bg-white/10 rounded-2xl border border-white/15 backdrop-blur-xs text-xs text-slate-200 shrink-0">
             <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
             <div>
-              <span className="font-bold block text-white">Bảo mật tuyệt đối</span>
+              <span className="font-bold block text-white">Bảo mật vĩnh viễn</span>
               <span className="text-[11px] text-slate-300">Không gửi file lên server</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Preset Grid Selection */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider">
-            Chọn dịch vụ chuyển đổi:
-          </h3>
-          <span className="text-xs text-slate-500">7 định dạng chuyển đổi phổ biến</span>
+      {/* Category Pills & Search Bar */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          {/* Category Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+            {[
+              { id: 'all', label: 'Tất cả (20 dịch vụ)' },
+              { id: 'pptx', label: 'PowerPoint (.pptx)' },
+              { id: 'docx', label: 'Word (.docx)' },
+              { id: 'excel', label: 'Excel (.xlsx/.csv)' },
+              { id: 'text', label: 'Văn bản (.txt/.md)' },
+              { id: 'image', label: 'Hình ảnh' },
+            ].map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategory(cat.id as CategoryKey)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                  activeCategory === cat.id
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Quick Search */}
+          <div className="relative w-full sm:w-64 shrink-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Tìm dịch vụ chuyển đổi..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
+            />
+          </div>
         </div>
 
+        {/* Services Grid (Showing 20 Services) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {PRESETS.map((preset) => {
-            const isSelected = selectedPreset === preset.id;
-            const FromIcon = preset.fromIcon;
-            const ToIcon = preset.toIcon;
+          {filteredServices.map((service) => {
+            const isSelected = selectedServiceId === service.id;
+            const FromIcon = service.fromIcon;
+            const ToIcon = service.toIcon;
 
             return (
               <button
-                key={preset.id}
+                key={service.id}
                 type="button"
-                onClick={() => handleSelectPreset(preset)}
+                onClick={() => handleSelectService(service)}
                 className={`p-4 rounded-2xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
                   isSelected
                     ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20 shadow-sm'
@@ -299,28 +523,35 @@ export const ConverterTab: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono">
-                      {preset.badge}
+                      {service.badge}
                     </span>
                     <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                      <span className="text-rose-600 font-mono">{preset.fromExt}</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-indigo-600 font-mono">{preset.toExt}</span>
+                      <span className="text-rose-600 font-mono">{service.fromExt}</span>
+                      <ArrowRight className="w-3 h-3 text-slate-400" />
+                      <span className="text-indigo-600 font-mono">{service.toExt}</span>
                     </div>
                   </div>
 
                   <h4 className="font-bold text-sm text-slate-900 mb-1 flex items-center gap-2">
                     <FromIcon className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{preset.title}</span>
+                    <span>{service.title}</span>
                   </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">{preset.desc}</p>
+                  <p className="text-xs text-slate-500 leading-relaxed">{service.desc}</p>
                 </div>
+
+                {isSelected && (
+                  <div className="mt-3 pt-2 border-t border-rose-200 flex items-center justify-between text-[11px] font-bold text-rose-700">
+                    <span>Đang chọn dịch vụ này</span>
+                    <Check className="w-3.5 h-3.5 text-rose-600" />
+                  </div>
+                )}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* File Upload & Converter Action Box */}
+      {/* Upload Zone & Action Section */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-sm">
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 text-sm">
@@ -332,7 +563,7 @@ export const ConverterTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setError(null)}
-              className="text-xs font-semibold underline hover:text-red-900"
+              className="text-xs font-semibold underline hover:text-red-900 cursor-pointer"
             >
               Đóng
             </button>
@@ -340,7 +571,7 @@ export const ConverterTab: React.FC = () => {
         )}
 
         {conversionResult ? (
-          /* Conversion Success State */
+          /* Conversion Success Card */
           <div className="text-center py-6 animate-in zoom-in-95 duration-150">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center mx-auto mb-4 shadow-md shadow-emerald-500/20">
               <CheckCircle2 className="w-8 h-8" />
@@ -355,7 +586,7 @@ export const ConverterTab: React.FC = () => {
               Tệp {conversionResult.format} của bạn đã sẵn sàng
             </h3>
             <p className="text-xs sm:text-sm text-slate-600 mb-6 max-w-md mx-auto">
-              Định dạng đã được tạo chuẩn xác từ tệp gốc với dung lượng tối ưu.
+              Dữ liệu được xử lý 100% trong trình duyệt với dung lượng tối ưu và chuẩn xác.
             </p>
 
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 max-w-md mx-auto mb-6 text-left flex items-center gap-3">
@@ -395,12 +626,12 @@ export const ConverterTab: React.FC = () => {
             </div>
           </div>
         ) : (
-          /* Upload and Convert Trigger State */
+          /* Dropzone Upload Section */
           <div className="space-y-6">
             <input
               ref={fileInputRef}
               type="file"
-              accept={currentPreset.accept}
+              accept={currentService.accept}
               onChange={handleFileChange}
               className="hidden"
             />
@@ -430,7 +661,7 @@ export const ConverterTab: React.FC = () => {
               ) : (
                 <div>
                   <h4 className="text-base sm:text-lg font-bold text-slate-900 mb-1">
-                    Kéo thả tệp {currentPreset.fromExt} vào đây
+                    Kéo thả tệp {currentService.fromExt} vào đây
                   </h4>
                   <p className="text-xs sm:text-sm text-slate-500 mb-4">
                     hoặc bấm để chọn tệp từ thiết bị của bạn
@@ -439,13 +670,13 @@ export const ConverterTab: React.FC = () => {
                     type="button"
                     className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-xs transition-all pointer-events-none"
                   >
-                    Chọn tệp {currentPreset.fromExt}
+                    Chọn tệp {currentService.fromExt}
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Convert Trigger Button */}
+            {/* Convert Execute Button */}
             <div className="pt-2">
               <button
                 type="button"
@@ -464,7 +695,7 @@ export const ConverterTab: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <span>TIẾN HÀNH CHUYỂN ĐỔI SANG {currentPreset.toExt.toUpperCase()}</span>
+                    <span>TIẾN HÀNH CHUYỂN ĐỔI SANG {currentService.toExt.toUpperCase()}</span>
                     <Sparkles className="w-4 h-4 text-amber-300" />
                   </>
                 )}
