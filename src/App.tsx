@@ -7,13 +7,14 @@ import { SlideInspectorModal } from './components/SlideInspectorModal.tsx';
 import { MergeModal } from './components/MergeModal.tsx';
 import { MergeSuccessCard } from './components/MergeSuccessCard.tsx';
 import { GuideSection } from './components/GuideSection.tsx';
+import { CopyrightModal } from './components/CopyrightModal.tsx';
 import { PPTFileItem, MergeResult } from './types.ts';
 import { parsePPTXFile } from './utils/pptxParser.ts';
-import { AlertCircle, Presentation, CheckCircle, ArrowDownUp } from 'lucide-react';
+import { AlertCircle, Presentation, CheckCircle, ArrowDownUp, BadgeCheck, ShieldCheck } from 'lucide-react';
 
 export default function App() {
   const [files, setFiles] = useState<PPTFileItem[]>([]);
-  const [outputName, setOutputName] = useState<string>('Gop_Slide_Tong_Hop.pptx');
+  const [outputName, setOutputName] = useState<string>('toolgopfilepptbylekimlam.pptx');
   const [isMerging, setIsMerging] = useState(false);
   const [mergeStep, setMergeStep] = useState(1);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -24,12 +25,13 @@ export default function App() {
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [isCopyrightOpen, setIsCopyrightOpen] = useState(false);
 
   // Set default output filename with formatted date
   useEffect(() => {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-    setOutputName(`Gop_PowerPoint_${dateStr}.pptx`);
+    setOutputName(`toolgopfilepptbylekimlam_${dateStr}.pptx`);
   }, []);
 
   // Handle newly selected/dropped files
@@ -397,22 +399,38 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100/70 text-slate-900 font-sans antialiased flex flex-col">
-      <Header onLoadSamples={handleLoadSamples} isLoadingSamples={isLoadingSamples} />
+      <Header
+        onLoadSamples={handleLoadSamples}
+        isLoadingSamples={isLoadingSamples}
+        onOpenCopyright={() => setIsCopyrightOpen(true)}
+      />
 
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        {/* Hero title */}
-        <div className="text-center max-w-2xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold mb-4 shadow-2xs">
+        {/* Hero title with Copyright Branding */}
+        <div className="text-center max-w-3xl mx-auto mb-10">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold mb-4 shadow-2xs flex-wrap justify-center">
             <Presentation className="w-4 h-4 text-rose-600" />
-            <span>Công cụ ghép nối slide PowerPoint trực tuyến</span>
+            <span className="font-mono">toolgopfilepptbylekimlam</span>
+            <span className="text-slate-300">•</span>
+            <button
+              type="button"
+              onClick={() => setIsCopyrightOpen(true)}
+              className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-bold underline cursor-pointer"
+            >
+              <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Bản quyền © Lê Kim Lâm</span>
+            </button>
           </div>
 
           <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.15]">
-            Gộp nhiều file <span className="bg-gradient-to-r from-rose-600 via-orange-600 to-amber-600 bg-clip-text text-transparent">PPTX</span> thành 1 file theo thứ tự
+            <span className="font-mono text-rose-600 block sm:inline">toolgopfilepptbylekimlam</span>
+            <span className="block text-2xl sm:text-4xl text-slate-800 font-bold mt-2">
+              Gộp nhiều file <span className="bg-gradient-to-r from-rose-600 via-orange-600 to-amber-600 bg-clip-text text-transparent">PowerPoint</span> theo thứ tự
+            </span>
           </h1>
 
-          <p className="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed">
-            Tải lên nhiều bài thuyết trình PowerPoint, tự do kéo thả sắp xếp trình tự các trang, và tải về 1 tệp duy nhất với chất lượng đồ họa và bố cục nguyên vẹn.
+          <p className="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl mx-auto">
+            Công cụ trực tuyến bản quyền bởi <strong>Lê Kim Lâm</strong>: Tải lên các bài thuyết trình PowerPoint, tự do kéo thả sắp xếp trình tự, và tải về 1 tệp duy nhất với chất lượng đồ họa và bố cục nguyên vẹn.
           </p>
         </div>
 
@@ -535,16 +553,43 @@ export default function App() {
         <GuideSection />
       </main>
 
+      {/* Modal: Copyright Details */}
+      <CopyrightModal
+        isOpen={isCopyrightOpen}
+        onClose={() => setIsCopyrightOpen(false)}
+      />
+
       {/* Footer */}
-      <footer className="mt-20 border-t border-slate-200 bg-white py-8 text-center text-xs text-slate-500">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
-            <span>PPTMerge • Hỗ trợ ghép nối Microsoft PowerPoint (.pptx)</span>
+      <footer className="mt-20 border-t border-slate-200 bg-white py-8 text-xs text-slate-500">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 text-center sm:text-left">
+            <div className="flex items-center gap-2 font-bold text-slate-800 font-mono text-sm">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
+              <span>toolgopfilepptbylekimlam</span>
+            </div>
+            <span className="text-slate-300 hidden sm:inline">•</span>
+            <span className="text-slate-600">
+              Bản quyền © 2026 <strong>Lê Kim Lâm</strong>. Mọi quyền được bảo lưu.
+            </span>
           </div>
-          <p className="text-slate-400">
-            Dữ liệu được xử lý riêng tư và an toàn trong phiên làm việc của bạn.
-          </p>
+
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <a
+              href="mailto:lekimlam2707@gmail.com"
+              className="text-slate-600 hover:text-rose-600 transition-colors font-mono"
+            >
+              lekimlam2707@gmail.com
+            </a>
+            <span className="text-slate-300">•</span>
+            <button
+              type="button"
+              onClick={() => setIsCopyrightOpen(true)}
+              className="flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-semibold bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
+            >
+              <BadgeCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Chứng nhận bản quyền</span>
+            </button>
+          </div>
         </div>
       </footer>
     </div>
